@@ -182,6 +182,11 @@ protected:
 	vec2 center_left;
 	vec2 center_right;
 
+	bool is_master = true;
+	bool start_auto_sync = false;
+	nng::socket soc_pair_rec;
+	float move_z = 0;
+
 public:
 	void init_cameras(vr::vr_kit* kit_ptr);
 
@@ -240,8 +245,12 @@ public:
 	bool load_boxes(const std::string fn, std::vector<box3>& boxes, std::vector<rgb>& box_colors, std::vector<vec3>& box_translations, std::vector<quat>& box_rotations);
 
 	Scene buildDummyScene();
+	Scene build_scene_for_movableboxes();
+	Scene build_scene_for_avatar();
 
-	void sync();
+	void sync_establish_connection_tcp();
+	void sync_push_local_movements();
+	void sync_pull_remote_movements();
 	void show_nng_connection_status();
 
 	void send_selection(int box_id);
