@@ -33,6 +33,18 @@
 #include <vr_view_interactor.h>
 #include <vr_render_helpers.h>
 
+// The server keeps a list of work items, sorted by expiration time,
+// so that we can use this to set the timeout to the correct value for
+// use in poll.
+struct work {
+	enum { INIT, RECV, WAIT, SEND } state = INIT;
+	nng::aio aio;
+	nng::msg msg;
+	nng::ctx ctx;
+
+	explicit work(nng::socket_view sock) : ctx(sock) {}
+};
+
 class vr_cobotics : 
 	public cgv::base::node,
 	public cgv::render::drawable,

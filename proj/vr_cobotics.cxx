@@ -1642,59 +1642,70 @@ void vr_cobotics::sync_pull_remote_movements() // start listen and update scene 
 	//set time out option 
 	soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
 	soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
+	//server keeps a list of work items, 128
+	/*#define Parallel 8
+	std::unique_ptr<work> works[Parallel];
+	for (int i = 0; i < Parallel; ++i) {
+		works[i] = std::make_unique<work>(soc_pair_rec);
+	}*/
+	//
 	soc_pair_rec.listen(listen_on.c_str());
-	nng::view rep_buf = soc_pair_rec.recv();
-	//check the content
-	if (rep_buf != "") {
-		std::cout << "frame received! clearing all movable boxes!\n";
-		clear_movable_boxes();
-		Scene scene;
-		scene.ParseFromArray(rep_buf.data(), rep_buf.size());
-		std::cout << "number of objects: " << scene.objects_size() << std::endl;
-		vec3 minp, maxp, trans;
-		quat rot;
-		rgb clr;
-		for (auto& object : scene.objects())
-		{
-			std::cout << "type: " << object.type() << " name: " << object.id() << std::endl;
-			if (object.type() == 1)
+	nng::view rep_buf = soc_pair_rec.recv(); // old version 
+	//for (int i = 0; i < Parallel; ++i) {
+		/*works[i]->ctx.recv(works[i]->aio);
+		auto msg = works[i]->aio.release_msg();
+		nng::view rep_buf = msg.body().get();*/
+		//check the content
+		if (rep_buf != "") {
+			std::cout << "frame received! clearing all movable boxes!\n";
+			clear_movable_boxes();
+			Scene scene;
+			scene.ParseFromArray(rep_buf.data(), rep_buf.size());
+			std::cout << "number of objects: " << scene.objects_size() << std::endl;
+			vec3 minp, maxp, trans;
+			quat rot;
+			rgb clr;
+			for (auto& object : scene.objects())
 			{
-				minp.x() = -object.size().length() / 2;
-				minp.y() = -object.size().height() / 2;
-				minp.z() = -object.size().width() / 2;
-				maxp.x() = object.size().length() / 2;
-				maxp.y() = object.size().height() / 2;
-				maxp.z() = object.size().width() / 2;
-				movable_boxes.emplace_back(minp, maxp);
-				// exchange y and z, because ros uses a physical coordinate.
-				trans.x() = object.pos().x();
-				trans.y() = object.pos().z();
-				trans.z() = object.pos().y();
-				movable_box_translations.emplace_back(trans);
-				rot.w() = object.orientation().w();
-				rot.x() = object.orientation().x();
-				rot.y() = object.orientation().z();
-				rot.z() = object.orientation().y();
-				movable_box_rotations.emplace_back(rot);
-				clr.R() = object.color().r();
-				clr.G() = object.color().g();
-				clr.B() = object.color().b();
-				movable_box_colors.emplace_back(clr);
-				std::cout << object.pos().x() << std::endl;
+				std::cout << "type: " << object.type() << " name: " << object.id() << std::endl;
+				if (object.type() == 1)
+				{
+					minp.x() = -object.size().length() / 2;
+					minp.y() = -object.size().height() / 2;
+					minp.z() = -object.size().width() / 2;
+					maxp.x() = object.size().length() / 2;
+					maxp.y() = object.size().height() / 2;
+					maxp.z() = object.size().width() / 2;
+					movable_boxes.emplace_back(minp, maxp);
+					// exchange y and z, because ros uses a physical coordinate.
+					trans.x() = object.pos().x();
+					trans.y() = object.pos().z();
+					trans.z() = object.pos().y();
+					movable_box_translations.emplace_back(trans);
+					rot.w() = object.orientation().w();
+					rot.x() = object.orientation().x();
+					rot.y() = object.orientation().z();
+					rot.z() = object.orientation().y();
+					movable_box_rotations.emplace_back(rot);
+					clr.R() = object.color().r();
+					clr.G() = object.color().g();
+					clr.B() = object.color().b();
+					movable_box_colors.emplace_back(clr);
+					std::cout << object.pos().x() << std::endl;
+				}
+				else if (object.type() == 2)
+				{
+					is_trashbin = true;
+					std::cout << "this is trash can" << std::endl;
+				}
+				else if (object.type() == 3)
+				{
+					std::cout << "this is robot arm" << std::endl;
+				}
 			}
-			else if (object.type() == 2)
-			{
-				is_trashbin = true;
-				std::cout << "this is trash can" << std::endl;
-			}
-			else if (object.type() == 3)
-			{
-				std::cout << "this is robot arm" << std::endl;
-			}
+			//save_boxes("boxes", movable_boxes, movable_box_colors, movable_box_translations, movable_box_rotations);
 		}
-		//save_boxes("boxes", movable_boxes, movable_box_colors, movable_box_translations, movable_box_rotations);
-	}
-
+	//}
 }
 
 //
