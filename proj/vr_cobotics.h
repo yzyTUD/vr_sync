@@ -20,6 +20,12 @@
 #include <string>
 #include <world.pb.h>
 
+#include <cgv/gui/trigger.h>
+
+#include <thread>
+#include <future>
+#include <pthread.h>
+
 ///@ingroup VR
 ///@{
 
@@ -32,6 +38,26 @@
 #include <cg_vr/vr_server.h>
 #include <vr_view_interactor.h>
 #include <vr_render_helpers.h>
+
+
+//class myClass
+//{
+//public:
+//	void* myFunction()
+//	{
+//		// some code, useless here
+//	}
+//
+//	void start()
+//	{
+//		pthread_t thread_id;
+//		int* fd;
+//
+//		//Some code, useless here.
+//
+//		pthread_create(&thread_id, 0, &callMyFunction, (void*)this);
+//	}
+//}
 
 // The server keeps a list of work items, sorted by expiration time,
 // so that we can use this to set the timeout to the correct value for
@@ -198,6 +224,7 @@ protected:
 	bool start_auto_sync = false;
 	nng::socket soc_pair_rec;
 	float move_z = 0;
+	Scene s;
 
 public:
 	void init_cameras(vr::vr_kit* kit_ptr);
@@ -264,12 +291,15 @@ public:
 	void sync_push_local_movements();
 	void sync_pull_remote_movements();
 	void show_nng_connection_status();
+	void* my_nng_thread();
+	void start_nng_thread();
 
 	void send_selection(int box_id);
 
 	Selection obtainSelection(int box_id);
 
 	void receiver();
+	void timer_event(double t, double dt);
 	protected:
 
 	void resize_box(int box_index, vec3 extends);
@@ -287,4 +317,9 @@ public:
 	size_t clear_intersections(int ci);
 };
 
+void* static_call_function(void* f)
+{
+	reinterpret_cast<vr_cobotics*>(f)->my_nng_thread();
+	return (NULL);
+}
 ///@}

@@ -380,6 +380,8 @@ vr_cobotics::vr_cobotics() : node("vr_cobotics")
 	font_enum_decl += "'";
 	state[0] = state[1] = state[2] = state[3] = IS_NONE;
 
+	connect(cgv::gui::get_animation_trigger().shoot, this, &vr_cobotics::timer_event);
+
 	//// init nng
 	//try {
 	//	soc_pair_rec = nng::pair::open();
@@ -398,6 +400,7 @@ vr_cobotics::vr_cobotics() : node("vr_cobotics")
 	//	printf("%s: %s\n", e.who(), e.what());
 	//	return;
 	//}
+	s = buildDummyScene();
 }
 	
 void vr_cobotics::stream_help(std::ostream& os) {
@@ -934,14 +937,6 @@ void vr_cobotics::init_frame(cgv::render::context& ctx)
 
 void vr_cobotics::draw(cgv::render::context& ctx)
 {
-	if (start_auto_sync) {
-		if (is_master) {
-			sync_push_local_movements();
-		}
-		else {
-			sync_pull_remote_movements();
-		}
-	}
 
 	if (MI.is_constructed()) {
 		dmat4 R;
@@ -1251,6 +1246,7 @@ void vr_cobotics::create_gui() {
 		add_member_control(this, "is_master", is_master, "check");
 		add_member_control(this, "start_auto_sync", start_auto_sync, "check");
 		add_member_control(this, "move_z", move_z, "value_slider", "min=0.1;max=10;log=true;ticks=true");
+		connect_copy(add_button("start_nng_thread")->click, rebind(this, &vr_cobotics::start_nng_thread));
 		connect_copy(add_button("pull_from_remote(listen)")->click, rebind(this, &vr_cobotics::sync_pull_remote_movements));
 		connect_copy(add_button("push_scene")->click, rebind(this, &vr_cobotics::sync_push_local_movements));
 		add_member_control(this, "select box", box_select_mode, "toggle");
@@ -1621,18 +1617,30 @@ void vr_cobotics::sync_establish_connection_tcp()
 // for master 
 void vr_cobotics::sync_push_local_movements()
 {
-	soc_pair_rec = nng::pair::open();
-	//set time out option 
-	soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
-	soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
-	soc_pair_rec.dial(remote_address.c_str(), NNG_FLAG_NONBLOCK);// or with flag NNG_FLAG_NONBLOCK
-	Scene s = buildDummyScene();
-	nng::view buf;
-	int length = s.ByteSize();
-	void* data = nng_alloc(length);
-	s.SerializeToArray(data, length); 
-	buf = nng::view::view(data, length);
-	soc_pair_rec.send(buf);
+	
+	try{
+		soc_pair_rec = nng::pair::open(); 
+		//set time out option 
+		soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
+		soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
+		//nng_dialer* dialerp;
+		//nng_dialer_create(dialerp, soc_pair_rec, remote_address.c_str());
+		soc_pair_rec.dial(remote_address.c_str(), NNG_FLAG_NONBLOCK);// or with flag NNG_FLAG_NONBLOCK
+		nng::view buf;
+		s = buildDummyScene();
+		int length = s.ByteSize();
+		void* data = nng_alloc(length);
+		s.SerializeToArray(data, length);
+		buf = nng::view::view(data, length);
+		//std::cout << "try sending..." << std::endl;
+		soc_pair_rec.send(buf);
+	}
+		catch (const nng::exception & e) {
+		// who() is the name of the nng function that produced the error
+		// what() is a description of the error code
+		printf("%s: %s\n", e.who(), e.what());
+		return;
+	}
 }
 
 // for clients 
@@ -1649,6 +1657,7 @@ void vr_cobotics::sync_pull_remote_movements() // start listen and update scene 
 		works[i] = std::make_unique<work>(soc_pair_rec);
 	}*/
 	//
+	//std::cout << "start listening..." << std::endl;
 	soc_pair_rec.listen(listen_on.c_str());
 	nng::view rep_buf = soc_pair_rec.recv(); // old version 
 	//for (int i = 0; i < Parallel; ++i) {
@@ -1657,17 +1666,17 @@ void vr_cobotics::sync_pull_remote_movements() // start listen and update scene 
 		nng::view rep_buf = msg.body().get();*/
 		//check the content
 		if (rep_buf != "") {
-			std::cout << "frame received! clearing all movable boxes!\n";
+			//std::cout << "frame received! clearing all movable boxes!\n";
 			clear_movable_boxes();
 			Scene scene;
 			scene.ParseFromArray(rep_buf.data(), rep_buf.size());
-			std::cout << "number of objects: " << scene.objects_size() << std::endl;
+			//std::cout << "number of objects: " << scene.objects_size() << std::endl;
 			vec3 minp, maxp, trans;
 			quat rot;
 			rgb clr;
 			for (auto& object : scene.objects())
 			{
-				std::cout << "type: " << object.type() << " name: " << object.id() << std::endl;
+				//std::cout << "type: " << object.type() << " name: " << object.id() << std::endl;
 				if (object.type() == 1)
 				{
 					minp.x() = -object.size().length() / 2;
@@ -1691,23 +1700,54 @@ void vr_cobotics::sync_pull_remote_movements() // start listen and update scene 
 					clr.G() = object.color().g();
 					clr.B() = object.color().b();
 					movable_box_colors.emplace_back(clr);
-					std::cout << object.pos().x() << std::endl;
+					//std::cout << object.pos().x() << std::endl;
 				}
 				else if (object.type() == 2)
 				{
 					is_trashbin = true;
-					std::cout << "this is trash can" << std::endl;
+					//std::cout << "this is trash can" << std::endl;
 				}
 				else if (object.type() == 3)
 				{
-					std::cout << "this is robot arm" << std::endl;
+					//std::cout << "this is robot arm" << std::endl;
 				}
 			}
 			//save_boxes("boxes", movable_boxes, movable_box_colors, movable_box_translations, movable_box_rotations);
 		}
-	//}
 }
 
+void* vr_cobotics::my_nng_thread() {
+	while (true) {
+		if (is_master) {
+			sync_push_local_movements();
+		}
+		else {
+			sync_pull_remote_movements();
+		}
+	}
+	// we should get two loops running at the same time
+	// 
+	/*while (true) {
+		std::cout << " an other thread running " << std::endl;
+	}*/
+	return 0;
+}
+
+
+void vr_cobotics::start_nng_thread() { 
+	//std::thread t1(&vr_cobotics::my_nng_thread, this);
+	//std::thread t2(&vr_cobotics::draw, this, this->get_context());
+	//t1.join();
+	//this->get_context()
+	//t2.join();
+	//std::thread([this] { this->nng_thread(); });
+	//nng_thread();
+	//std::async(&vr_cobotics::my_nng_thread, this);
+	//std::future<void> result(std::async(&vr_cobotics::my_nng_thread,this));
+	//static_call_function
+	pthread_t thread_id;
+	pthread_create(&thread_id, 0, &static_call_function, (void*)this);
+}
 //
 //void vr_cobotics::sync()
 //{
@@ -1805,6 +1845,11 @@ void vr_cobotics::send_selection(int box_id)
 void vr_cobotics::receiver()
 {
 
+}
+void vr_cobotics::timer_event(double t, double dt)
+{
+	/*if(start_auto_sync)
+		my_nng_thread();*/
 }
 
 #include <cgv/base/register.h>

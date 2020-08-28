@@ -7,8 +7,8 @@ addProjectDeps=["cgv_utils", "cgv_type", "cgv_data", "cgv_base", "cgv_math",
 				"cgv_media", "cgv_gui", "cgv_render", "cmi_io",
 				"cgv_viewer", "cg_fltk", "crg_grid", "cg_ext", "cgv_gl", 
 				"crg_vr_view", 
-				"cg_vr", "vr_emulator", "openvr_driver"];
-addIncDirs=[INPUT_DIR, CGV_DIR."/libs", CGV_DIR."/test", INPUT_DIR."/nng64/nng/include", INPUT_DIR."/nng64/nngpp/include", INPUT_DIR."/protocbuf64/include"];
+				"cg_vr", "vr_emulator", "openvr_driver","pthread"];
+addIncDirs=[INPUT_DIR, CGV_DIR."/libs", CGV_DIR."/test", CGV_DIR."/3rd/pthread", INPUT_DIR."/nng64/nng/include", INPUT_DIR."/nng64/nngpp/include", INPUT_DIR."/protocbuf64/include"];
 addLibDirs=[
     INPUT_DIR."/nng64/Release",
 	INPUT_DIR."/protocbuf64/lib"
