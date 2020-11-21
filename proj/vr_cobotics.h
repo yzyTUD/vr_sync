@@ -173,6 +173,17 @@ protected:
 	std::vector<rgb> movable_box_colors;
 	std::vector<vec3> movable_box_translations;
 	std::vector<quat> movable_box_rotations;
+	
+	// store the movable boxes for controllers
+	std::vector<box3> movable_boxes_controllers;
+	std::vector<rgb> movable_box_colors_controllers;
+	std::vector<vec3> movable_box_translations_controllers;
+	std::vector<quat> movable_box_rotations_controllers;
+
+	// 
+	vec3 remote_hmd_posi;
+	quat remote_hmd_ori;
+	bool render_head = false;
 
 	// store the wireframe boxes
 	std::vector<box3> frame_boxes;
@@ -225,6 +236,17 @@ protected:
 	nng::socket soc_pair_rec;
 	float move_z = 0;
 	Scene s;
+
+	// record controller movements 
+	vec3 left_hand_posi;
+	vec3 right_hand_posi;
+	vec3 head_posi;
+	quat left_hand_ori;
+	quat right_hand_ori;
+	quat head_ori;
+	bool is_the_first_time_sync_data = true;
+	cgv::render::mesh_render_info* MI_controller_ptr = 0;
+	cgv::render::mesh_render_info* MI_hmd_ptr = 0;
 
 public:
 	void init_cameras(vr::vr_kit* kit_ptr);
@@ -285,6 +307,7 @@ public:
 
 	Scene buildDummyScene();
 	Scene build_scene_for_movableboxes();
+	Scene build_controller_posi_to_scene();
 	Scene build_scene_for_avatar();
 
 	void sync_establish_connection_tcp();

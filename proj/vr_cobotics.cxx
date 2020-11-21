@@ -13,6 +13,8 @@
 #include <cgv/media/mesh/simple_mesh.h>
 #include <cg_vr/vr_events.h>
 
+#include <test/vr/vr_emulator.h>
+
 #include <random>
 #include <sstream>
 
@@ -742,6 +744,20 @@ bool vr_cobotics::handle(cgv::gui::event& e)
 					<< vrpe.get_position() << " "
 					<< quat(vrpe.get_orientation()) << '\n';
 			}
+			if (ci == 0) { // update posi. of the left hand controller 
+				left_hand_posi = vrpe.get_position();
+				left_hand_ori = vrpe.get_quaternion();
+			}
+			if (ci == 1) { // update posi. of the right hand controller 
+				right_hand_posi = vrpe.get_position();
+				right_hand_ori = vrpe.get_quaternion();
+			}
+			head_posi.x() = vrpe.get_state().hmd.pose[9];
+			head_posi.y() = vrpe.get_state().hmd.pose[10];
+			head_posi.z() = vrpe.get_state().hmd.pose[11];
+			mat3 head_ori_mat3 = reinterpret_cast<const mat3&>(vrpe.get_state().hmd.pose[0]);
+			head_ori = quat(head_ori_mat3);
+
 			post_redraw();
 		}
 		return true;
@@ -796,6 +812,13 @@ bool vr_cobotics::init(cgv::render::context& ctx)
 	cgv::render::ref_box_renderer(ctx, 1);
 	cgv::render::ref_sphere_renderer(ctx, 1);
 	cgv::render::ref_rounded_cone_renderer(ctx, 1);
+
+	/*vr_emulated_kit* vr_emu_ptr = new vr_emulated_kit();
+	vr_emu_ptr->*/
+
+	MI_controller_ptr = vr::get_vrmesh_render_info(ctx, vr::VRM_CONTROLLER);
+	MI_hmd_ptr = vr::get_vrmesh_render_info(ctx, vr::VRM_HMD);
+
 	return true;
 }
 
@@ -937,6 +960,52 @@ void vr_cobotics::init_frame(cgv::render::context& ctx)
 
 void vr_cobotics::draw(cgv::render::context& ctx)
 {
+	if (render_head) {
+		if (MI_hmd_ptr) {
+			// render head
+			ctx.push_modelview_matrix();
+			mat4 R;
+			remote_hmd_ori.put_homogeneous_matrix(R);
+			ctx.mul_modelview_matrix(cgv::math::translate4<double>(
+				remote_hmd_posi.x(),
+				remote_hmd_posi.y(),
+				remote_hmd_posi.z()
+				) * R);
+			ctx.mul_modelview_matrix(cgv::math::scale4<float>(vec3(1)));
+			MI_hmd_ptr->draw_all(ctx);
+			ctx.pop_modelview_matrix();
+		}
+	}
+
+	// render the controllers for remote people 
+	if (movable_box_translations_controllers.size() > 1) {
+		if (MI_controller_ptr) {
+			// render left hand controller 
+			ctx.push_modelview_matrix();
+			mat4 R;
+			movable_box_rotations_controllers.at(0).put_homogeneous_matrix(R);
+			ctx.mul_modelview_matrix(cgv::math::translate4<double>(
+					movable_box_translations_controllers.at(0).x(),
+					movable_box_translations_controllers.at(0).y(),
+					movable_box_translations_controllers.at(0).z()
+				) * R);
+			ctx.mul_modelview_matrix(cgv::math::scale4<float>(vec3(1)));
+			MI_controller_ptr->draw_all(ctx);
+			ctx.pop_modelview_matrix();
+
+			// render right hand controller 
+			ctx.push_modelview_matrix();
+			movable_box_rotations_controllers.at(1).put_homogeneous_matrix(R);
+			ctx.mul_modelview_matrix(cgv::math::translate4<double>(
+					movable_box_translations_controllers.at(1).x(),
+					movable_box_translations_controllers.at(1).y(),
+					movable_box_translations_controllers.at(1).z()
+				) * R);
+			ctx.mul_modelview_matrix(cgv::math::scale4<float>(vec3(1)));
+			MI_controller_ptr->draw_all(ctx);
+			ctx.pop_modelview_matrix();
+		}
+	}
 
 	if (MI.is_constructed()) {
 		dmat4 R;
@@ -1088,6 +1157,26 @@ void vr_cobotics::draw(cgv::render::context& ctx)
 		}
 		renderer.disable(ctx);
 	}
+	
+	// draw dynamic boxes for controllers
+	/*if (movable_boxes_controllers.size() > 0) {
+		renderer.set_render_style(movable_style);
+		renderer.set_box_array(ctx, movable_boxes_controllers);
+		renderer.set_color_array(ctx, movable_box_colors_controllers);
+		renderer.set_translation_array(ctx, movable_box_translations_controllers);
+		renderer.set_rotation_array(ctx, movable_box_rotations_controllers);
+		if (renderer.validate_and_enable(ctx)) {
+			if (show_seethrough) {
+				glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+				renderer.draw(ctx, 0, 3);
+				glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+				renderer.draw(ctx, 3, movable_boxes_controllers.size() - 3);
+			}
+			else
+				renderer.draw(ctx, 0, movable_boxes_controllers.size());
+		}
+		renderer.disable(ctx);
+	}*/
 
 	// draw dynamic boxes 
 	renderer.set_render_style(movable_style);
@@ -1246,6 +1335,8 @@ void vr_cobotics::create_gui() {
 		add_member_control(this, "is_master", is_master, "check");
 		add_member_control(this, "start_auto_sync", start_auto_sync, "check");
 		add_member_control(this, "move_z", move_z, "value_slider", "min=0.1;max=10;log=true;ticks=true");
+		//sync_establish_connection_tcp
+		connect_copy(add_button("sync_establish_connection_tcp")->click, rebind(this, &vr_cobotics::sync_establish_connection_tcp));
 		connect_copy(add_button("start_nng_thread")->click, rebind(this, &vr_cobotics::start_nng_thread));
 		connect_copy(add_button("pull_from_remote(listen)")->click, rebind(this, &vr_cobotics::sync_pull_remote_movements));
 		connect_copy(add_button("push_scene")->click, rebind(this, &vr_cobotics::sync_push_local_movements));
@@ -1496,6 +1587,51 @@ Scene vr_cobotics::build_scene_for_movableboxes()
 	return scene;
 }
 
+Scene vr_cobotics::build_controller_posi_to_scene() {
+	Scene scene;
+
+	// build for left hand controller 
+	auto object = scene.add_objects();
+	object->set_id("lefthand");
+	auto pos = object->mutable_pos();
+	pos->set_x(left_hand_posi.x());
+	pos->set_y(left_hand_posi.y());
+	pos->set_z(left_hand_posi.z());
+	auto ori = object->mutable_orientation();
+	ori->set_w(left_hand_ori.w());
+	ori->set_x(left_hand_ori.x());
+	ori->set_y(left_hand_ori.y());
+	ori->set_z(left_hand_ori.z());
+
+	// build for right hand controller 
+	object = scene.add_objects();
+	object->set_id("righthand");
+	pos = object->mutable_pos();
+	pos->set_x(right_hand_posi.x());
+	pos->set_y(right_hand_posi.y());
+	pos->set_z(right_hand_posi.z());
+	ori = object->mutable_orientation();
+	ori->set_w(right_hand_ori.w());
+	ori->set_x(right_hand_ori.x());
+	ori->set_y(right_hand_ori.y());
+	ori->set_z(right_hand_ori.z());
+
+	// build for head
+	object = scene.add_objects();
+	object->set_id("head");
+	pos = object->mutable_pos();
+	pos->set_x(head_posi.x());
+	pos->set_y(head_posi.y());
+	pos->set_z(head_posi.z());
+	ori = object->mutable_orientation();
+	ori->set_w(head_ori.w());
+	ori->set_x(head_ori.x());
+	ori->set_y(head_ori.y());
+	ori->set_z(head_ori.z());
+
+	return scene;
+}
+
 Scene vr_cobotics::buildDummyScene()
 {
 	Scene scene;
@@ -1547,48 +1683,6 @@ Selection vr_cobotics::obtainSelection(int box_id) //
 // test nng func. here
 void vr_cobotics::show_nng_connection_status() 
 {
-	//nng::socket soc_pair_rec = nng::pair::open();
-	//soc_pair_rec.dial("tcp://127.0.0.1:6576");
-
-	//// req sends "hello" including the null terminator
-	//soc_pair_rec.send("hello");
-	// create a socket for the rep protocol
-	//try{
-	//	std::cout << "starting server...\n";
-	//	nng::socket rep_sock = nng::rep::open();
-
-	//	// rep starts listening using the tcp transport
-	//	rep_sock.listen("tcp://localhost:8000");
-
-	//	// create a socket for the req protocol
-	//	nng::socket req_sock = nng::req::open();
-
-	//	// req dials and establishes a connection
-	//	req_sock.dial("tcp://localhost:8000");
-
-	//	// req sends "hello" including the null terminator
-	//	req_sock.send("hello");
-
-	//	// rep receives a message
-	//	nng::buffer rep_buf = rep_sock.recv();
-
-	//	// check the content
-	//	if (rep_buf == "hello") {
-	//		// rep sends "world" in response
-	//		rep_sock.send("world");
-	//		std::cout << "demo success!\n";
-	//	}
-
-	//	// req receives "world"
-	//	nng::buffer req_buf = req_sock.recv();
-	//	std::cout << req_buf.data();
-	//}
-	//catch (const nng::exception & e) {
-	//	// who() is the name of the nng function that produced the error
-	//	// what() is a description of the error code
-	//	printf("%s: %s\n", e.who(), e.what());
-	//	return;
-	//}
 	std::cout << "local:" << listen_on << std::endl;
 	std::cout << "remote:" << remote_address << std::endl;
 }
@@ -1596,124 +1690,170 @@ void vr_cobotics::show_nng_connection_status()
 
 void vr_cobotics::sync_establish_connection_tcp()
 {
-	//try {
-	//	soc_pair_rec = nng::pair::open();
-	//	//set time out option 
-	//	soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
-	//	soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
-	//	//soc_pair_rec.listen(listen_on.c_str());
-	//	//nng::view rep_buf = soc_pair_rec.recv();
-	//	//if (rep_buf != "") {
-	//	//	std::cout << "frame sync success!\n";
-	//	//}
-	//}catch (const nng::exception & e) {
-	//	// who() is the name of the nng function that produced the error
-	//	// what() is a description of the error code
-	//	printf("%s: %s\n", e.who(), e.what());
-	//	return;
-	//}
+	if (is_master) {
+		// create a socket for the req protocol
+		soc_pair_rec = nng::req::open();
+		soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
+
+		// req dials and establishes a connection
+		soc_pair_rec.dial(remote_address.c_str(), NNG_FLAG_NONBLOCK);
+	}
+	else {
+		// create a socket for the rep protocol
+		soc_pair_rec = nng::rep::open();
+		soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
+
+		// rep starts listening using the tcp transport
+		soc_pair_rec.listen(listen_on.c_str());
+	}
 }
 
 // for master 
 void vr_cobotics::sync_push_local_movements()
 {
-	
-	try{
-		soc_pair_rec = nng::pair::open(); 
-		//set time out option 
-		soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
-		soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
-		//nng_dialer* dialerp;
-		//nng_dialer_create(dialerp, soc_pair_rec, remote_address.c_str());
-		soc_pair_rec.dial(remote_address.c_str(), NNG_FLAG_NONBLOCK);// or with flag NNG_FLAG_NONBLOCK
-		nng::view buf;
-		s = buildDummyScene();
-		int length = s.ByteSize();
-		void* data = nng_alloc(length);
-		s.SerializeToArray(data, length);
-		buf = nng::view::view(data, length);
-		//std::cout << "try sending..." << std::endl;
-		soc_pair_rec.send(buf);
-	}
-		catch (const nng::exception & e) {
-		// who() is the name of the nng function that produced the error
-		// what() is a description of the error code
-		printf("%s: %s\n", e.who(), e.what());
-		return;
-	}
+	// TEST: just send a word
+	// soc_pair_rec.send("hello");
+
+	// pack all data into a buf 
+	nng::view buf;
+	s = build_controller_posi_to_scene();// buildDummyScene();
+	int length = s.ByteSize();
+	void* data = nng_alloc(length);
+	s.SerializeToArray(data, length);
+	buf = nng::view::view(data, length);
+
+	soc_pair_rec.send(buf);
 }
 
 // for clients 
 void vr_cobotics::sync_pull_remote_movements() // start listen and update scene when data comes 
 {
-	soc_pair_rec = nng::pair::open();
-	//set time out option 
-	soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
-	soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
-	//server keeps a list of work items, 128
-	/*#define Parallel 8
-	std::unique_ptr<work> works[Parallel];
-	for (int i = 0; i < Parallel; ++i) {
-		works[i] = std::make_unique<work>(soc_pair_rec);
-	}*/
-	//
-	//std::cout << "start listening..." << std::endl;
-	soc_pair_rec.listen(listen_on.c_str());
-	nng::view rep_buf = soc_pair_rec.recv(); // old version 
-	//for (int i = 0; i < Parallel; ++i) {
-		/*works[i]->ctx.recv(works[i]->aio);
-		auto msg = works[i]->aio.release_msg();
-		nng::view rep_buf = msg.body().get();*/
-		//check the content
-		if (rep_buf != "") {
-			//std::cout << "frame received! clearing all movable boxes!\n";
-			clear_movable_boxes();
-			Scene scene;
-			scene.ParseFromArray(rep_buf.data(), rep_buf.size());
-			//std::cout << "number of objects: " << scene.objects_size() << std::endl;
-			vec3 minp, maxp, trans;
-			quat rot;
-			rgb clr;
-			for (auto& object : scene.objects())
-			{
-				//std::cout << "type: " << object.type() << " name: " << object.id() << std::endl;
-				if (object.type() == 1)
+	// TEST: rep receives a message
+	/*nng::buffer rep_buf = soc_pair_rec.recv();
+	std::cout << rep_buf.data() << std::endl;*/
+
+	nng::view rep_buf = soc_pair_rec.recv(); 
+
+	// after receiving a data package 
+	if (rep_buf != "") {
+		//std::cout << "frame received! clearing all movable boxes!\n";
+		//clear_movable_boxes();
+		Scene scene;
+		scene.ParseFromArray(rep_buf.data(), rep_buf.size());
+		//std::cout << "number of objects: " << scene.objects_size() << std::endl;
+		vec3 minp, maxp, trans;
+		quat rot;
+		rgb clr;
+			/*std::cout << "///" << std::endl;
+			std::cout << "posi: x:" << object.pos().x() << std::endl;*/
+
+			if (is_the_first_time_sync_data) {
+				for (auto& objects: scene.objects()) 
 				{
-					minp.x() = -object.size().length() / 2;
-					minp.y() = -object.size().height() / 2;
-					minp.z() = -object.size().width() / 2;
-					maxp.x() = object.size().length() / 2;
-					maxp.y() = object.size().height() / 2;
-					maxp.z() = object.size().width() / 2;
-					movable_boxes.emplace_back(minp, maxp);
-					// exchange y and z, because ros uses a physical coordinate.
-					trans.x() = object.pos().x();
-					trans.y() = object.pos().z();
-					trans.z() = object.pos().y();
-					movable_box_translations.emplace_back(trans);
-					rot.w() = object.orientation().w();
-					rot.x() = object.orientation().x();
-					rot.y() = object.orientation().z();
-					rot.z() = object.orientation().y();
-					movable_box_rotations.emplace_back(rot);
-					clr.R() = object.color().r();
-					clr.G() = object.color().g();
-					clr.B() = object.color().b();
-					movable_box_colors.emplace_back(clr);
-					//std::cout << object.pos().x() << std::endl;
+					if (objects.id() == "head") {
+						trans.x() = objects.pos().x();
+						trans.y() = objects.pos().y();
+						trans.z() = objects.pos().z();
+						remote_hmd_posi = trans;
+						rot.w() = objects.orientation().w();
+						rot.x() = objects.orientation().x();
+						rot.y() = objects.orientation().y();
+						rot.z() = objects.orientation().z();
+						remote_hmd_ori = rot;
+						render_head = true;
+					}
+					else {
+						movable_boxes_controllers.push_back(box3(vec3(-0.1, -0.1, -0.1), vec3(0.1, 0.1, 0.1)));
+						rot.w() = objects.orientation().w();
+						rot.x() = objects.orientation().x();
+						rot.y() = objects.orientation().y();
+						rot.z() = objects.orientation().z();
+						movable_box_rotations_controllers.push_back(rot);
+						trans.x() = objects.pos().x();
+						trans.y() = objects.pos().y();
+						trans.z() = objects.pos().z();
+						movable_box_translations_controllers.push_back(trans);
+						movable_box_colors_controllers.push_back(rgb(0, 1, 0));
+					}
 				}
-				else if (object.type() == 2)
-				{
-					is_trashbin = true;
-					//std::cout << "this is trash can" << std::endl;
-				}
-				else if (object.type() == 3)
-				{
-					//std::cout << "this is robot arm" << std::endl;
+				is_the_first_time_sync_data = false;
+			}
+			else if (scene.objects().size() > 1 && movable_box_translations_controllers.size() > 1) {
+				trans.x() = scene.objects().at(0).pos().x();
+				trans.y() = scene.objects().at(0).pos().y();
+				trans.z() = scene.objects().at(0).pos().z();
+				movable_box_translations_controllers.at(0) = trans;
+				rot.w() = scene.objects().at(0).orientation().w();
+				rot.x() = scene.objects().at(0).orientation().x();
+				rot.y() = scene.objects().at(0).orientation().y();
+				rot.z() = scene.objects().at(0).orientation().z();
+				movable_box_rotations_controllers.at(0) = rot;
+
+				trans.x() = scene.objects().at(1).pos().x();
+				trans.y() = scene.objects().at(1).pos().y();
+				trans.z() = scene.objects().at(1).pos().z();
+				movable_box_translations_controllers.at(1) = trans;
+				rot.w() = scene.objects().at(1).orientation().w();
+				rot.x() = scene.objects().at(1).orientation().x();
+				rot.y() = scene.objects().at(1).orientation().y();
+				rot.z() = scene.objects().at(1).orientation().z();
+				movable_box_rotations_controllers.at(1) = rot;
+
+				if (scene.objects().size() > 2)
+				if (scene.objects().at(2).id() == "head") {
+					trans.x() = scene.objects().at(2).pos().x();
+					trans.y() = scene.objects().at(2).pos().y();
+					trans.z() = scene.objects().at(2).pos().z();
+					remote_hmd_posi = trans;
+					rot.w() = scene.objects().at(2).orientation().w();
+					rot.x() = scene.objects().at(2).orientation().x();
+					rot.y() = scene.objects().at(2).orientation().y();
+					rot.z() = scene.objects().at(2).orientation().z();
+					remote_hmd_ori = rot;
+					render_head = true;
 				}
 			}
-			//save_boxes("boxes", movable_boxes, movable_box_colors, movable_box_translations, movable_box_rotations);
-		}
+
+			//std::cout << "type: " << object.type() << " name: " << object.id() << std::endl;
+			//if (object.type() == 1)
+			//{
+			//	minp.x() = -object.size().length() / 2;
+			//	minp.y() = -object.size().height() / 2;
+			//	minp.z() = -object.size().width() / 2;
+			//	maxp.x() = object.size().length() / 2;
+			//	maxp.y() = object.size().height() / 2;
+			//	maxp.z() = object.size().width() / 2;
+			//	movable_boxes.emplace_back(minp, maxp);
+			//	// exchange y and z, because ros uses a physical coordinate.
+			//	trans.x() = object.pos().x();
+			//	trans.y() = object.pos().z();
+			//	trans.z() = object.pos().y();
+			//	movable_box_translations.emplace_back(trans);
+			//	rot.w() = object.orientation().w();
+			//	rot.x() = object.orientation().x();
+			//	rot.y() = object.orientation().z();
+			//	rot.z() = object.orientation().y();
+			//	movable_box_rotations.emplace_back(rot);
+			//	clr.R() = object.color().r();
+			//	clr.G() = object.color().g();
+			//	clr.B() = object.color().b();
+			//	movable_box_colors.emplace_back(clr);
+			//	//std::cout << object.pos().x() << std::endl;
+			//}
+			//else if (object.type() == 2)
+			//{
+			//	is_trashbin = true;
+			//	//std::cout << "this is trash can" << std::endl;
+			//}
+			//else if (object.type() == 3)
+			//{
+			//	//std::cout << "this is robot arm" << std::endl;
+			//}
+		//}
+		//save_boxes("boxes", movable_boxes, movable_box_colors, movable_box_translations, movable_box_rotations);
+		post_redraw();
+	}
+
 }
 
 void* vr_cobotics::my_nng_thread() {
@@ -1725,64 +1865,14 @@ void* vr_cobotics::my_nng_thread() {
 			sync_pull_remote_movements();
 		}
 	}
-	// we should get two loops running at the same time
-	// 
-	/*while (true) {
-		std::cout << " an other thread running " << std::endl;
-	}*/
 	return 0;
 }
 
-
 void vr_cobotics::start_nng_thread() { 
-	//std::thread t1(&vr_cobotics::my_nng_thread, this);
-	//std::thread t2(&vr_cobotics::draw, this, this->get_context());
-	//t1.join();
-	//this->get_context()
-	//t2.join();
-	//std::thread([this] { this->nng_thread(); });
-	//nng_thread();
-	//std::async(&vr_cobotics::my_nng_thread, this);
-	//std::future<void> result(std::async(&vr_cobotics::my_nng_thread,this));
-	//static_call_function
+	sync_establish_connection_tcp();
 	pthread_t thread_id;
 	pthread_create(&thread_id, 0, &static_call_function, (void*)this);
 }
-//
-//void vr_cobotics::sync()
-//{
-//	try {
-//		nng::socket soc_pair_rec = nng::pair::open();
-//		//set time out option 
-//		soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
-//		soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
-//		soc_pair_rec.listen(listen_on.c_str());
-//		//if connection is refused, will not be returned immediately, still trying to dial
-//		soc_pair_rec.dial(remote_address.c_str(), NNG_FLAG_NONBLOCK);
-//		Scene s = buildDummyScene();
-//		nng::view buf;
-//		int length = s.ByteSize();
-//		void* data = nng_alloc(length);
-//		s.SerializeToArray(data, length); 
-//
-//		buf = nng::view::view(data, length);
-//		soc_pair_rec.send(buf);
-//		nng::view rep_buf = soc_pair_rec.recv();
-//		if (rep_buf != "") {
-//			std::cout << "frame sync success!\n";
-//		}
-//		if (!is_master) {
-//			
-//		}
-//	}
-//	catch (const nng::exception & e) {
-//		// who() is the name of the nng function that produced the error
-//		// what() is a description of the error code
-//		printf("%s: %s\n", e.who(), e.what());
-//		return;
-//	}
-//	
-//}
 
 void vr_cobotics::send_selection(int box_id)
 {
@@ -1846,10 +1936,9 @@ void vr_cobotics::receiver()
 {
 
 }
+
 void vr_cobotics::timer_event(double t, double dt)
 {
-	/*if(start_auto_sync)
-		my_nng_thread();*/
 }
 
 #include <cgv/base/register.h>
