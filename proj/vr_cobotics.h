@@ -233,7 +233,8 @@ protected:
 
 	bool is_master = true;
 	bool start_auto_sync = false;
-	nng::socket soc_pair_rec;
+	nng::socket soc_pair_master; 
+	nng::socket soc_pair_client;
 	float move_z = 0;
 	Scene s;
 
@@ -314,8 +315,10 @@ public:
 	void sync_push_local_movements();
 	void sync_pull_remote_movements();
 	void show_nng_connection_status();
-	void* my_nng_thread();
-	void start_nng_thread();
+	void* nng_thread_master();
+	void* nng_thread_client();
+	void start_nng_thread_as_master();
+	void start_nng_thread_as_client();
 
 	void send_selection(int box_id);
 
@@ -340,9 +343,15 @@ public:
 	size_t clear_intersections(int ci);
 };
 
-void* static_call_function(void* f)
+void* static_call_master(void* f)
 {
-	reinterpret_cast<vr_cobotics*>(f)->my_nng_thread();
+	reinterpret_cast<vr_cobotics*>(f)->nng_thread_master();
+	return (NULL);
+}
+
+void* static_call_client(void* f)
+{
+	reinterpret_cast<vr_cobotics*>(f)->nng_thread_client();
 	return (NULL);
 }
 ///@}

@@ -1328,18 +1328,19 @@ void vr_cobotics::create_gui() {
 			add_member_control(this, prefix + ".precision", left_deadzone_and_precision[i].second, "value_slider", "min=0;max=1;ticks=true;log=true");
 		}
 	}
-	if (begin_tree_node("NNG events", 1.f)) {
+	if (begin_tree_node("NNG events", 1.f, true)) {
 		align("\a");
 		add_member_control(this, "local_address", listen_on);
 		add_member_control(this, "remote_address", remote_address);
-		add_member_control(this, "is_master", is_master, "check");
-		add_member_control(this, "start_auto_sync", start_auto_sync, "check");
-		add_member_control(this, "move_z", move_z, "value_slider", "min=0.1;max=10;log=true;ticks=true");
+		//add_member_control(this, "is_master", is_master, "check");
+		//add_member_control(this, "start_auto_sync", start_auto_sync, "check");
+		//add_member_control(this, "move_z", move_z, "value_slider", "min=0.1;max=10;log=true;ticks=true");
 		//sync_establish_connection_tcp
-		connect_copy(add_button("sync_establish_connection_tcp")->click, rebind(this, &vr_cobotics::sync_establish_connection_tcp));
-		connect_copy(add_button("start_nng_thread")->click, rebind(this, &vr_cobotics::start_nng_thread));
-		connect_copy(add_button("pull_from_remote(listen)")->click, rebind(this, &vr_cobotics::sync_pull_remote_movements));
-		connect_copy(add_button("push_scene")->click, rebind(this, &vr_cobotics::sync_push_local_movements));
+		//connect_copy(add_button("sync_establish_connection_tcp")->click, rebind(this, &vr_cobotics::sync_establish_connection_tcp));
+		connect_copy(add_button("start_nng_thread_as_master")->click, rebind(this, &vr_cobotics::start_nng_thread_as_master));
+		connect_copy(add_button("start_nng_thread_as_client")->click, rebind(this, &vr_cobotics::start_nng_thread_as_client));
+		connect_copy(add_button("pull_from_remote")->click, rebind(this, &vr_cobotics::sync_pull_remote_movements));
+		connect_copy(add_button("push_scene_remote")->click, rebind(this, &vr_cobotics::sync_push_local_movements));
 		add_member_control(this, "select box", box_select_mode, "toggle");
 		add_member_control(this, "select trash bin", trash_bin_select_mode, "toggle");
 		align("\b");
@@ -1690,22 +1691,6 @@ void vr_cobotics::show_nng_connection_status()
 
 void vr_cobotics::sync_establish_connection_tcp()
 {
-	if (is_master) {
-		// create a socket for the req protocol
-		soc_pair_rec = nng::req::open();
-		soc_pair_rec.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
-
-		// req dials and establishes a connection
-		soc_pair_rec.dial(remote_address.c_str(), NNG_FLAG_NONBLOCK);
-	}
-	else {
-		// create a socket for the rep protocol
-		soc_pair_rec = nng::rep::open();
-		soc_pair_rec.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
-
-		// rep starts listening using the tcp transport
-		soc_pair_rec.listen(listen_on.c_str());
-	}
 }
 
 // for master 
@@ -1722,7 +1707,7 @@ void vr_cobotics::sync_push_local_movements()
 	s.SerializeToArray(data, length);
 	buf = nng::view::view(data, length);
 
-	soc_pair_rec.send(buf);
+	soc_pair_master.send(buf);
 }
 
 // for clients 
@@ -1732,7 +1717,7 @@ void vr_cobotics::sync_pull_remote_movements() // start listen and update scene 
 	/*nng::buffer rep_buf = soc_pair_rec.recv();
 	std::cout << rep_buf.data() << std::endl;*/
 
-	nng::view rep_buf = soc_pair_rec.recv(); 
+	nng::view rep_buf = soc_pair_client.recv();
 
 	// after receiving a data package 
 	if (rep_buf != "") {
@@ -1856,22 +1841,41 @@ void vr_cobotics::sync_pull_remote_movements() // start listen and update scene 
 
 }
 
-void* vr_cobotics::my_nng_thread() {
-	while (true) {
-		if (is_master) {
-			sync_push_local_movements();
-		}
-		else {
-			sync_pull_remote_movements();
-		}
-	}
+void* vr_cobotics::nng_thread_master() {
+	while (true) 
+		sync_push_local_movements();
 	return 0;
 }
 
-void vr_cobotics::start_nng_thread() { 
-	sync_establish_connection_tcp();
+void* vr_cobotics::nng_thread_client() {
+	while(true)
+		sync_pull_remote_movements();
+}
+
+void vr_cobotics::start_nng_thread_as_master() { 
+
+	// create a socket for the req protocol
+	soc_pair_master = nng::req::open();
+	soc_pair_master.set_opt_ms(NNG_OPT_SENDTIMEO, 1000 * 60);
+
+	// req dials and establishes a connection
+	soc_pair_master.dial(remote_address.c_str(), NNG_FLAG_NONBLOCK);
+
 	pthread_t thread_id;
-	pthread_create(&thread_id, 0, &static_call_function, (void*)this);
+	pthread_create(&thread_id, 0, &static_call_master, (void*)this);
+}
+
+void vr_cobotics::start_nng_thread_as_client() {
+
+	// create a socket for the rep protocol
+	soc_pair_client = nng::rep::open();
+	soc_pair_client.set_opt_ms(NNG_OPT_RECVTIMEO, 1000 * 60);
+
+	// rep starts listening using the tcp transport
+	soc_pair_client.listen(listen_on.c_str());
+
+	pthread_t thread_id;
+	pthread_create(&thread_id, 0, &static_call_client, (void*)this);
 }
 
 void vr_cobotics::send_selection(int box_id)
