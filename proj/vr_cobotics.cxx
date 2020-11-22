@@ -1703,8 +1703,9 @@ void vr_cobotics::sync_push_local_movements()
 	nng::view buf;
 	s = build_controller_posi_to_scene();// buildDummyScene();
 	int length = s.ByteSize();
+	//std::cout << "bytes:" << length << std::endl;
 	void* data = nng_alloc(length);
-	s.SerializeToArray(data, length);
+	s.SerializePartialToArray(data, length);
 	buf = nng::view::view(data, length);
 
 	soc_pair_master.send(buf);
@@ -1844,11 +1845,10 @@ void vr_cobotics::sync_pull_remote_movements() // start listen and update scene 
 void* vr_cobotics::nng_thread_master() {
 	while (true) 
 		sync_push_local_movements();
-	return 0;
 }
 
 void* vr_cobotics::nng_thread_client() {
-	while(true)
+	while (true)
 		sync_pull_remote_movements();
 }
 
