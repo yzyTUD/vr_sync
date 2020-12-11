@@ -336,7 +336,7 @@ vr_cobotics::vr_cobotics() : node("vr_cobotics")
 	ray_length = 2;
 	last_kit_handle = 0;
 	connect(cgv::gui::ref_vr_server().on_device_change, this, &vr_cobotics::on_device_change);
-	buildDummyScene();
+	//buildDummyScene();
 
 	mesh_scale = 0.0005f;
 	mesh_location = dvec3(0, 0.85f, 0);
@@ -402,7 +402,7 @@ vr_cobotics::vr_cobotics() : node("vr_cobotics")
 	//	printf("%s: %s\n", e.who(), e.what());
 	//	return;
 	//}
-	s = buildDummyScene();
+	//s = buildDummyScene();
 }
 	
 void vr_cobotics::stream_help(std::ostream& os) {
